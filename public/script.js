@@ -3,9 +3,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatBox = document.getElementById('chat-box');
   const chatForm = document.getElementById('chat-form');
   const userInput = document.getElementById('user-input');
+
   const attachBtn = document.getElementById('attach-btn');
   const attachMenu = document.getElementById('attach-menu');
   const attachmentPreview = document.getElementById('attachment-preview');
+
   const imageInput = document.getElementById('image-input');
   const docInput = document.getElementById('doc-input');
   const audioInput = document.getElementById('audio-input');
@@ -13,19 +15,21 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingFile = null;
   let pendingType = null;
 
-  // Toggle attachment menu
+  // === Attachment Menu ===
   attachBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     attachMenu.classList.toggle('hidden');
+    attachBtn.setAttribute('aria-expanded', String(!attachMenu.classList.contains('hidden')));
   });
 
   document.addEventListener('click', (e) => {
     if (!attachMenu.contains(e.target) && e.target !== attachBtn) {
       attachMenu.classList.add('hidden');
+      attachBtn.setAttribute('aria-expanded', 'false');
     }
   });
 
-  // File input handlers
+  // === File Input Handling ===
   imageInput.addEventListener('change', (e) => handleFileSelect(e, 'image'));
   docInput.addEventListener('change', (e) => handleFileSelect(e, 'document'));
   audioInput.addEventListener('change', (e) => handleFileSelect(e, 'audio'));
@@ -33,9 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleFileSelect(e, type) {
     const file = e.target.files[0];
     if (!file) return;
-    attachMenu.classList.add('hidden');
     pendingFile = file;
     pendingType = type;
+    attachMenu.classList.add('hidden');
     showPreview(file, type);
   }
 
@@ -44,20 +48,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const item = document.createElement('div');
     item.className = 'preview-item';
 
-    let icon = document.createElement('i');
-    if (type === 'image') icon.className = 'fa-regular fa-image';
-    else if (type === 'audio') icon.className = 'fa-solid fa-microphone';
-    else icon.className = 'fa-regular fa-file-lines';
+    if (type === 'image') {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      item.appendChild(img);
+    } else {
+      const icon = document.createElement('i');
+      icon.className = type === 'audio' ? 'fa-solid fa-microphone' : 'fa-regular fa-file-lines';
+      icon.style.fontSize = '18px';
+      item.appendChild(icon);
+    }
 
     const name = document.createElement('span');
     name.textContent = file.name;
+    name.style.maxWidth = '220px';
+    name.style.overflow = 'hidden';
+    name.style.textOverflow = 'ellipsis';
+    name.style.whiteSpace = 'nowrap';
+    item.appendChild(name);
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-preview';
     removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-    removeBtn.onclick = () => clearPreview();
-
-    item.append(icon, name, removeBtn);
+    removeBtn.title = 'Remove attachment';
+    removeBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      clearPreview();
+    });
+    item.appendChild(removeBtn);
     attachmentPreview.appendChild(item);
   }
 
@@ -70,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     audioInput.value = '';
   }
 
+  // === Chat Send ===
   chatForm.addEventListener('submit', handleSend);
   userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -83,89 +103,92 @@ document.addEventListener('DOMContentLoaded', () => {
     const userMessage = userInput.value.trim();
     if (!userMessage && !pendingFile) return;
 
+    // Create group for this message (user)
+    const group = document.createElement('div');
+    group.className = 'message-group user';
+    chatBox.appendChild(group);
+
     if (pendingFile) {
-      addAttachmentBubble(pendingFile, pendingType, 'user');
-      addMessage(userMessage, 'user');
-      const thinking = addMessage('Thinking...', 'bot');
-      await sendFileWithPrompt(pendingFile, pendingType, userMessage, thinking);
-      clearPreview();
-    } else {
-      addMessage(userMessage, 'user');
-      const thinking = addMessage('Thinking...', 'bot');
-      await sendText(userMessage, thinking);
+      addAttachmentBubble(group, pendingFile, pendingType);
     }
+    addMessage(group, userMessage || '(no message)', 'user');
 
+    const thinkingGroup = document.createElement('div');
+    thinkingGroup.className = 'message-group bot';
+    chatBox.appendChild(thinkingGroup);
+    const thinking = addMessage(thinkingGroup, 'Thinking...', 'bot');
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+    const fileToSend = pendingFile;
+    const typeToSend = pendingType;
+    clearPreview();
     userInput.value = '';
+
+    await sendToServer(userMessage, thinking, fileToSend, typeToSend);
   }
 
-  async function sendText(message, thinkingMsg) {
+  async function sendToServer(userMessage, thinkingBubble, fileRef, fileType) {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation: [{ role: 'user', text: message }] }),
-      });
-      const data = await res.json();
-      thinkingMsg.textContent = data.result || 'No response';
+      if (fileRef) {
+        const formData = new FormData();
+        formData.append(fileType, fileRef);
+        formData.append('prompt', userMessage || 'Analyze this file.');
+
+        const endpoint =
+          fileType === 'image'
+            ? '/generate-from-image'
+            : fileType === 'audio'
+            ? '/generate-from-audio'
+            : '/generate-from-document';
+
+        const res = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST', body: formData });
+        const data = await res.json();
+        thinkingBubble.textContent = data.result || 'No response';
+      } else {
+        const res = await fetch(`${API_BASE_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation: [{ role: 'user', text: userMessage }] }),
+        });
+        const data = await res.json();
+        thinkingBubble.textContent = data.result || 'No response';
+      }
     } catch (err) {
-      thinkingMsg.textContent = 'Error: ' + err.message;
+      thinkingBubble.textContent = 'Error: ' + (err.message || err);
     }
   }
 
-  async function sendFileWithPrompt(file, type, prompt, thinkingMsg) {
-    const formData = new FormData();
-    formData.append(type, file);
-    formData.append('prompt', prompt || 'Analyze this file.');
-
-    const endpoint =
-      type === 'image'
-        ? '/generate-from-image'
-        : type === 'audio'
-        ? '/generate-from-audio'
-        : '/generate-from-document';
-
-    try {
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      thinkingMsg.textContent = data.result || 'No response';
-    } catch (err) {
-      thinkingMsg.textContent = 'Error: ' + err.message;
-    }
-  }
-
-  function addMessage(content, sender) {
+  // === UI Builders ===
+  function addMessage(parent, content, sender) {
     const div = document.createElement('div');
     div.className = `message ${sender}-message`;
     div.textContent = content;
-    chatBox.appendChild(div);
+    parent.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
     return div;
   }
 
-  function addAttachmentBubble(file, type, sender) {
+  function addAttachmentBubble(parent, file, type) {
     const div = document.createElement('div');
-    div.className = `attachment-bubble ${sender}`;
+    div.className = `attachment-bubble`;
+
     if (type === 'image') {
       const img = document.createElement('img');
       img.src = URL.createObjectURL(file);
+      img.onload = () => URL.revokeObjectURL(img.src);
       div.appendChild(img);
     } else {
       const iconDiv = document.createElement('div');
       iconDiv.className = 'file-icon';
       const icon = document.createElement('i');
-      icon.className =
-        type === 'audio'
-          ? 'fa-solid fa-microphone'
-          : 'fa-regular fa-file-lines';
-      const label = document.createElement('span');
-      label.textContent = file.name;
-      iconDiv.append(icon, label);
+      icon.className = type === 'audio' ? 'fa-solid fa-microphone' : 'fa-regular fa-file-lines';
+      iconDiv.appendChild(icon);
+      const span = document.createElement('span');
+      span.textContent = file.name;
+      iconDiv.appendChild(span);
       div.appendChild(iconDiv);
     }
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
+
+    parent.appendChild(div);
   }
 });
