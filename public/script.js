@@ -1,26 +1,98 @@
-const form = document.getElementById('chat-form');
-const input = document.getElementById('user-input');
-const chatBox = document.getElementById('chat-box');
+/**
+ * Wait for the DOM to be fully loaded before attaching event listeners.
+ */
+document.addEventListener('DOMContentLoaded', () => {
 
-form.addEventListener('submit', function (e) {
-  e.preventDefault();
+    // PENTING: Target server Express yang berjalan di port 3000.
+    const API_BASE_URL = 'http://localhost:3000';
+    
+    // Inisialisasi array untuk menyimpan seluruh riwayat percakapan.
+    const conversationHistory = [];
 
-  const userMessage = input.value.trim();
-  if (!userMessage) return;
+    // Get references to the essential HTML elements
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const chatBox = document.getElementById('chat-box');
 
-  appendMessage('user', userMessage);
-  input.value = '';
+    /**
+     * Handles the chat form submission.
+     */
+    chatForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
 
-  // Simulasi dummy balasan bot (placeholder)
-  setTimeout(() => {
-    appendMessage('bot', 'Gemini is thinking... (this is dummy response)');
-  }, 1000);
+        const userMessage = userInput.value.trim();
+        if (!userMessage) return;
+
+        // 1. Tambahkan pesan pengguna ke riwayat dan UI
+        conversationHistory.push({ role: 'user', text: userMessage });
+        addMessageToChatBox(userMessage, 'user');
+        userInput.value = '';
+
+        // 2. Tampilkan pesan "Thinking..." (hanya di UI)
+        const thinkingMessageElement = addMessageToChatBox('Thinking...', 'bot');
+        thinkingMessageElement.classList.add('animate-pulse');
+
+        try {
+            // 3. Kirim SELURUH riwayat percakapan untuk konteks
+            const response = await fetch(`${API_BASE_URL}/api/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    conversation: conversationHistory
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                const errorMessage = errorData ? errorData.message : `Server error! Status: ${response.status}`;
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+
+            if (data && data.result) {
+                const botResponseText = data.result;
+                
+                // 4. Perbarui UI dengan jawaban final dan hapus loading
+                thinkingMessageElement.textContent = botResponseText;
+                thinkingMessageElement.classList.remove('animate-pulse');
+
+                // 4b. Tambahkan jawaban bot ke riwayat percakapan
+                conversationHistory.push({ role: 'model', text: botResponseText });
+                
+            } else {
+                thinkingMessageElement.textContent = 'Sorry, no response received.';
+                // Jika respons gagal, hapus pesan pengguna terakhir dari riwayat
+                conversationHistory.pop(); 
+            }
+
+        } catch (error) {
+            // 5. Tangani kesalahan
+            console.error('Error fetching chat response:', error);
+            thinkingMessageElement.textContent = `Failed to get response: ${error.message}`;
+            // Hapus pesan pengguna terakhir dari riwayat jika ada error
+            conversationHistory.pop(); 
+        }
+    });
+
+    /**
+     * Helper function to create and append a new message to the chat box.
+     */
+    function addMessageToChatBox(content, sender) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', `${sender}-message`);
+        messageElement.textContent = content;
+        chatBox.appendChild(messageElement);
+        scrollToBottom(chatBox);
+        return messageElement;
+    }
+
+    /**
+     * Helper function to scroll an element to its bottom.
+     */
+    function scrollToBottom(element) {
+        element.scrollTop = element.scrollHeight;
+    }
 });
-
-function appendMessage(sender, text) {
-  const msg = document.createElement('div');
-  msg.classList.add('message', sender);
-  msg.textContent = text;
-  chatBox.appendChild(msg);
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
