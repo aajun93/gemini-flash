@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import multer from 'multer';
 import fs from 'fs/promises';
 import { GoogleGenAI } from '@google/genai';
@@ -12,6 +13,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY});
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
+app.use(cors());
 app.use(express.json());
 
 app.post('/generate-text', async (req, res) => {
@@ -89,6 +91,30 @@ app.post('/generate-from-audio',upload.single('audio'), async (req, res)=>{
         res.status(500).json({message: e.message})
     }
 });
+
+app.post('/api/chat', async (req, res) => {
+    const { conversation } = req.body;
+
+    try {
+        if(!Array.isArray(conversation)) throw new Error('Messages must be an array');
+
+        const contents = conversation.map(({role, text }) => ({
+            role,
+            parts: [{ text }]
+        }));
+
+        const response = await ai.models.generateContent({
+            model: GEMINI_MODEL,
+            contents
+        });   
+
+        res.status(200).json({ result: response.text });
+    } catch (e) {
+        res.status(500).json({ message: e.message });
+    }
+});
+
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT,()=>console.log('Server ready  on http://localhost:${PORT}'));
