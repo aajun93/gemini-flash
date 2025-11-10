@@ -16,38 +16,38 @@
     <div id="chat-box" class="chat-box" aria-live="polite"></div>
 
     <form id="chat-form" autocomplete="off">
-      <div id="attachment-preview" class="attachment-preview" aria-hidden="true"></div>
-
       <div class="input-area">
-        <div class="attach-menu-container">
-          <button type="button" id="attach-btn" class="attach-main-btn" aria-haspopup="true" aria-expanded="false">
-            <i class="fa-solid fa-paperclip"></i>
-          </button>
+        <div class="input-wrapper">
+          <!-- inline preview di atas text -->
+          <div id="inline-preview" class="inline-preview" aria-hidden="true"></div>
 
-          <div id="attach-menu" class="attach-menu hidden" role="menu" aria-label="Attachment menu">
-            <label for="image-input" class="attach-option" role="menuitem">
-              <i class="fa-regular fa-image"></i><span>Image</span>
-            </label>
-            <label for="doc-input" class="attach-option" role="menuitem">
-              <i class="fa-regular fa-file-lines"></i><span>Document</span>
-            </label>
-            <label for="audio-input" class="attach-option" role="menuitem">
-              <i class="fa-solid fa-microphone"></i><span>Audio</span>
-            </label>
+          <!-- satu baris: tombol attach + input + tombol send -->
+          <div class="input-row">
+            <div class="attach-menu-container">
+              <button type="button" id="attach-btn" class="attach-main-btn" aria-haspopup="true" aria-expanded="false">
+                <i class="fa-solid fa-paperclip"></i>
+              </button>
+              <div id="attach-menu" class="attach-menu hidden" role="menu" aria-label="Attachment menu">
+                <label for="image-input" class="attach-option" role="menuitem">
+                  <i class="fa-regular fa-image"></i><span>Image</span>
+                </label>
+                <label for="doc-input" class="attach-option" role="menuitem">
+                  <i class="fa-regular fa-file-lines"></i><span>Document</span>
+                </label>
+                <label for="audio-input" class="attach-option" role="menuitem">
+                  <i class="fa-solid fa-microphone"></i><span>Audio</span>
+                </label>
+              </div>
+            </div>
+
+            <input type="file" id="image-input" accept="image/*" hidden />
+            <input type="file" id="doc-input" accept=".pdf,.txt,.doc,.docx,application/pdf" hidden />
+            <input type="file" id="audio-input" accept="audio/*" hidden />
+
+            <input type="text" id="user-input" placeholder="Type your message..." aria-label="Message" />
+            <button type="submit" id="send-btn" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
           </div>
         </div>
-
-        <input type="file" id="image-input" accept="image/*" hidden />
-        <input type="file" id="doc-input" accept=".pdf,.txt,.doc,.docx,application/pdf" hidden />
-        <input type="file" id="audio-input" accept="audio/*" hidden />
-
-        <input
-          type="text"
-          id="user-input"
-          placeholder="Type your message and press Enter..."
-          aria-label="Message"
-        />
-        <button type="submit" id="send-btn" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
       </div>
     </form>
   </div>
