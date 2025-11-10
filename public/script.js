@@ -1,98 +1,171 @@
-/**
- * Wait for the DOM to be fully loaded before attaching event listeners.
- */
 document.addEventListener('DOMContentLoaded', () => {
+  const API_BASE_URL = 'http://localhost:3000';
+  const chatBox = document.getElementById('chat-box');
+  const chatForm = document.getElementById('chat-form');
+  const userInput = document.getElementById('user-input');
+  const attachBtn = document.getElementById('attach-btn');
+  const attachMenu = document.getElementById('attach-menu');
+  const attachmentPreview = document.getElementById('attachment-preview');
+  const imageInput = document.getElementById('image-input');
+  const docInput = document.getElementById('doc-input');
+  const audioInput = document.getElementById('audio-input');
 
-    // PENTING: Target server Express yang berjalan di port 3000.
-    const API_BASE_URL = 'http://localhost:3000';
-    
-    // Inisialisasi array untuk menyimpan seluruh riwayat percakapan.
-    const conversationHistory = [];
+  let pendingFile = null;
+  let pendingType = null;
 
-    // Get references to the essential HTML elements
-    const chatForm = document.getElementById('chat-form');
-    const userInput = document.getElementById('user-input');
-    const chatBox = document.getElementById('chat-box');
+  // Toggle attachment menu
+  attachBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    attachMenu.classList.toggle('hidden');
+  });
 
-    /**
-     * Handles the chat form submission.
-     */
-    chatForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
+  document.addEventListener('click', (e) => {
+    if (!attachMenu.contains(e.target) && e.target !== attachBtn) {
+      attachMenu.classList.add('hidden');
+    }
+  });
 
-        const userMessage = userInput.value.trim();
-        if (!userMessage) return;
+  // File input handlers
+  imageInput.addEventListener('change', (e) => handleFileSelect(e, 'image'));
+  docInput.addEventListener('change', (e) => handleFileSelect(e, 'document'));
+  audioInput.addEventListener('change', (e) => handleFileSelect(e, 'audio'));
 
-        // 1. Tambahkan pesan pengguna ke riwayat dan UI
-        conversationHistory.push({ role: 'user', text: userMessage });
-        addMessageToChatBox(userMessage, 'user');
-        userInput.value = '';
+  function handleFileSelect(e, type) {
+    const file = e.target.files[0];
+    if (!file) return;
+    attachMenu.classList.add('hidden');
+    pendingFile = file;
+    pendingType = type;
+    showPreview(file, type);
+  }
 
-        // 2. Tampilkan pesan "Thinking..." (hanya di UI)
-        const thinkingMessageElement = addMessageToChatBox('Thinking...', 'bot');
-        thinkingMessageElement.classList.add('animate-pulse');
+  function showPreview(file, type) {
+    attachmentPreview.innerHTML = '';
+    const item = document.createElement('div');
+    item.className = 'preview-item';
 
-        try {
-            // 3. Kirim SELURUH riwayat percakapan untuk konteks
-            const response = await fetch(`${API_BASE_URL}/api/chat`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    conversation: conversationHistory
-                })
-            });
+    let icon = document.createElement('i');
+    if (type === 'image') icon.className = 'fa-regular fa-image';
+    else if (type === 'audio') icon.className = 'fa-solid fa-microphone';
+    else icon.className = 'fa-regular fa-file-lines';
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => null);
-                const errorMessage = errorData ? errorData.message : `Server error! Status: ${response.status}`;
-                throw new Error(errorMessage);
-            }
+    const name = document.createElement('span');
+    name.textContent = file.name;
 
-            const data = await response.json();
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-preview';
+    removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+    removeBtn.onclick = () => clearPreview();
 
-            if (data && data.result) {
-                const botResponseText = data.result;
-                
-                // 4. Perbarui UI dengan jawaban final dan hapus loading
-                thinkingMessageElement.textContent = botResponseText;
-                thinkingMessageElement.classList.remove('animate-pulse');
+    item.append(icon, name, removeBtn);
+    attachmentPreview.appendChild(item);
+  }
 
-                // 4b. Tambahkan jawaban bot ke riwayat percakapan
-                conversationHistory.push({ role: 'model', text: botResponseText });
-                
-            } else {
-                thinkingMessageElement.textContent = 'Sorry, no response received.';
-                // Jika respons gagal, hapus pesan pengguna terakhir dari riwayat
-                conversationHistory.pop(); 
-            }
+  function clearPreview() {
+    attachmentPreview.innerHTML = '';
+    pendingFile = null;
+    pendingType = null;
+    imageInput.value = '';
+    docInput.value = '';
+    audioInput.value = '';
+  }
 
-        } catch (error) {
-            // 5. Tangani kesalahan
-            console.error('Error fetching chat response:', error);
-            thinkingMessageElement.textContent = `Failed to get response: ${error.message}`;
-            // Hapus pesan pengguna terakhir dari riwayat jika ada error
-            conversationHistory.pop(); 
-        }
-    });
+  chatForm.addEventListener('submit', handleSend);
+  userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(e);
+    }
+  });
 
-    /**
-     * Helper function to create and append a new message to the chat box.
-     */
-    function addMessageToChatBox(content, sender) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', `${sender}-message`);
-        messageElement.textContent = content;
-        chatBox.appendChild(messageElement);
-        scrollToBottom(chatBox);
-        return messageElement;
+  async function handleSend(e) {
+    e.preventDefault();
+    const userMessage = userInput.value.trim();
+    if (!userMessage && !pendingFile) return;
+
+    if (pendingFile) {
+      addAttachmentBubble(pendingFile, pendingType, 'user');
+      addMessage(userMessage, 'user');
+      const thinking = addMessage('Thinking...', 'bot');
+      await sendFileWithPrompt(pendingFile, pendingType, userMessage, thinking);
+      clearPreview();
+    } else {
+      addMessage(userMessage, 'user');
+      const thinking = addMessage('Thinking...', 'bot');
+      await sendText(userMessage, thinking);
     }
 
-    /**
-     * Helper function to scroll an element to its bottom.
-     */
-    function scrollToBottom(element) {
-        element.scrollTop = element.scrollHeight;
+    userInput.value = '';
+  }
+
+  async function sendText(message, thinkingMsg) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation: [{ role: 'user', text: message }] }),
+      });
+      const data = await res.json();
+      thinkingMsg.textContent = data.result || 'No response';
+    } catch (err) {
+      thinkingMsg.textContent = 'Error: ' + err.message;
     }
+  }
+
+  async function sendFileWithPrompt(file, type, prompt, thinkingMsg) {
+    const formData = new FormData();
+    formData.append(type, file);
+    formData.append('prompt', prompt || 'Analyze this file.');
+
+    const endpoint =
+      type === 'image'
+        ? '/generate-from-image'
+        : type === 'audio'
+        ? '/generate-from-audio'
+        : '/generate-from-document';
+
+    try {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      thinkingMsg.textContent = data.result || 'No response';
+    } catch (err) {
+      thinkingMsg.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function addMessage(content, sender) {
+    const div = document.createElement('div');
+    div.className = `message ${sender}-message`;
+    div.textContent = content;
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return div;
+  }
+
+  function addAttachmentBubble(file, type, sender) {
+    const div = document.createElement('div');
+    div.className = `attachment-bubble ${sender}`;
+    if (type === 'image') {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      div.appendChild(img);
+    } else {
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'file-icon';
+      const icon = document.createElement('i');
+      icon.className =
+        type === 'audio'
+          ? 'fa-solid fa-microphone'
+          : 'fa-regular fa-file-lines';
+      const label = document.createElement('span');
+      label.textContent = file.name;
+      iconDiv.append(icon, label);
+      div.appendChild(iconDiv);
+    }
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
 });
