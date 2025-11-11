@@ -13,19 +13,21 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingFile = null;
   let pendingType = null;
 
-  attachBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    attachMenu.classList.toggle('hidden');
-    attachBtn.setAttribute('aria-expanded', String(!attachMenu.classList.contains('hidden')));
-  });
-
-  document.addEventListener('click', (e) => {
+  const closeMenu = (e) => {
     if (!attachMenu.contains(e.target) && e.target !== attachBtn) {
       attachMenu.classList.add('hidden');
       attachBtn.setAttribute('aria-expanded', 'false');
     }
-  });
+  };
 
+  const toggleMenu = (e) => {
+    e.stopPropagation();
+    attachMenu.classList.toggle('hidden');
+    attachBtn.setAttribute('aria-expanded', String(!attachMenu.classList.contains('hidden')));
+  };
+
+  attachBtn.addEventListener('click', toggleMenu);
+  document.addEventListener('click', closeMenu);
   imageInput.addEventListener('change', (e) => handleFileSelect(e, 'image'));
   docInput.addEventListener('change', (e) => handleFileSelect(e, 'document'));
   audioInput.addEventListener('change', (e) => handleFileSelect(e, 'audio'));
@@ -44,30 +46,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const wrapper = document.createElement('div');
     wrapper.className = 'inline-item';
 
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'inline-content';
+
     if (type === 'image') {
       const img = document.createElement('img');
       img.src = URL.createObjectURL(file);
-      img.onload = () => URL.revokeObjectURL(img.src);
-      wrapper.appendChild(img);
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+      };
+      img.className = 'inline-thumbnail';
+      contentDiv.appendChild(img);
     } else {
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'inline-icon';
       const icon = document.createElement('i');
       icon.className = type === 'audio'
-        ? 'fa-solid fa-microphone file-icon'
-        : 'fa-regular fa-file-lines file-icon';
-      wrapper.appendChild(icon);
+        ? 'fa-solid fa-microphone'
+        : 'fa-regular fa-file-lines';
+      iconDiv.appendChild(icon);
+      contentDiv.appendChild(iconDiv);
     }
 
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'inline-info';
     const name = document.createElement('span');
+    name.className = 'inline-filename';
     name.textContent = file.name;
-    wrapper.appendChild(name);
+    infoDiv.appendChild(name);
+    contentDiv.appendChild(infoDiv);
 
-    const remove = document.createElement('button');
-    remove.className = 'remove-preview';
-    remove.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-    remove.title = 'Remove attachment';
-    remove.onclick = () => clearPreview();
+    wrapper.appendChild(contentDiv);
 
-    wrapper.appendChild(remove);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'inline-remove';
+    removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+    removeBtn.title = 'Remove attachment';
+    removeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearPreview();
+    });
+
+    wrapper.appendChild(removeBtn);
     inlinePreview.appendChild(wrapper);
   }
 
@@ -93,17 +114,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const userMessage = userInput.value.trim();
     if (!userMessage && !pendingFile) return;
 
-    const group = document.createElement('div');
-    group.className = 'message-group user';
-    chatBox.appendChild(group);
+    const userGroup = document.createElement('div');
+    userGroup.className = 'message-group user';
+    chatBox.appendChild(userGroup);
 
-    if (pendingFile) addAttachmentBubble(group, pendingFile, pendingType);
-    if (userMessage) addMessage(group, userMessage, 'user');
+    if (pendingFile) {
+      addAttachmentBubble(userGroup, pendingFile, pendingType);
+    }
+    if (userMessage) {
+      addMessage(userGroup, userMessage, 'user', false);
+    }
 
     const botGroup = document.createElement('div');
     botGroup.className = 'message-group bot';
     chatBox.appendChild(botGroup);
-    const thinking = addMessage(botGroup, 'Thinking...', 'bot');
+    const thinking = addMessage(botGroup, 'Thinking...', 'bot', false);
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -117,44 +142,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function sendToServer(userMessage, thinkingBubble, fileRef, fileType) {
     try {
+      let response;
+
       if (fileRef) {
         const formData = new FormData();
         formData.append(fileType, fileRef);
         formData.append('prompt', userMessage || 'Analyze this file.');
 
-        const endpoint =
-          fileType === 'image'
-            ? '/generate-from-image'
-            : fileType === 'audio'
+        const endpoint = fileType === 'image'
+          ? '/generate-from-image'
+          : fileType === 'audio'
             ? '/generate-from-audio'
             : '/generate-from-document';
 
-        const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        response = await fetch(`${API_BASE_URL}${endpoint}`, {
           method: 'POST',
-          body: formData,
+          body: formData
         });
-        const data = await res.json();
-        thinkingBubble.textContent = data.result || 'No response';
       } else {
-        const res = await fetch(`${API_BASE_URL}/api/chat`, {
+        response = await fetch(`${API_BASE_URL}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            conversation: [{ role: 'user', text: userMessage }],
-          }),
+            conversation: [{ role: 'user', text: userMessage }]
+          })
         });
-        const data = await res.json();
-        thinkingBubble.textContent = data.result || 'No response';
       }
+
+      const data = await response.json();
+      thinkingBubble.innerHTML = data.result || 'No response';
+      thinkingBubble.className = `message bot-message formatted`;
     } catch (err) {
-      thinkingBubble.textContent = 'Error: ' + (err.message || err);
+      thinkingBubble.textContent = `Error: ${err.message || err}`;
     }
   }
 
-  function addMessage(parent, content, sender) {
+  function addMessage(parent, content, sender, isHtml = false) {
     const div = document.createElement('div');
     div.className = `message ${sender}-message`;
-    div.textContent = content;
+    
+    if (isHtml) {
+      div.innerHTML = content;
+      div.classList.add('formatted');
+    } else {
+      div.textContent = content;
+    }
+    
     parent.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
     return div;
@@ -167,7 +200,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (type === 'image') {
       const img = document.createElement('img');
       img.src = URL.createObjectURL(file);
-      img.onload = () => URL.revokeObjectURL(img.src);
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+      };
       bubble.appendChild(img);
     } else {
       const link = document.createElement('a');
